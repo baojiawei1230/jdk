@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,12 +25,11 @@
 #ifndef OS_LINUX_OS_LINUX_HPP
 #define OS_LINUX_OS_LINUX_HPP
 
-// Linux_OS defines the interface to Linux operating systems
+#include "runtime/os.hpp"
 
-// Information about the protection of the page at address '0' on this os.
-static bool zero_page_read_protected() { return true; }
+// os::Linux defines the interface to Linux operating systems
 
-class Linux {
+class os::Linux {
   friend class CgroupSubsystem;
   friend class os;
   friend class OSContainer;
@@ -56,7 +55,6 @@ class Linux {
 
   static julong _physical_memory;
   static pthread_t _main_thread;
-  static int _page_size;
 
   static julong available_memory();
   static julong physical_memory() { return _physical_memory; }
@@ -78,18 +76,19 @@ class Linux {
   static GrowableArray<int>* nindex_to_node()  { return _nindex_to_node; }
 
   static size_t default_large_page_size();
-  static size_t find_default_large_page_size();
-  static size_t find_large_page_size(size_t page_size);
-  static size_t setup_large_page_size();
+  static size_t scan_default_large_page_size();
+  static os::PageSizes scan_multiple_page_support();
 
   static bool setup_large_page_type(size_t page_size);
   static bool transparent_huge_pages_sanity_check(bool warn, size_t pages_size);
   static bool hugetlbfs_sanity_check(bool warn, size_t page_size);
+  static bool shm_hugetlbfs_sanity_check(bool warn, size_t page_size);
+
+  static int hugetlbfs_page_size_flag(size_t page_size);
 
   static char* reserve_memory_special_shm(size_t bytes, size_t alignment, char* req_addr, bool exec);
-  static char* reserve_memory_special_huge_tlbfs(size_t bytes, size_t alignment, char* req_addr, bool exec);
-  static char* reserve_memory_special_huge_tlbfs_only(size_t bytes, char* req_addr, bool exec);
-  static char* reserve_memory_special_huge_tlbfs_mixed(size_t bytes, size_t alignment, char* req_addr, bool exec);
+  static char* reserve_memory_special_huge_tlbfs(size_t bytes, size_t alignment, size_t page_size, char* req_addr, bool exec);
+  static bool commit_memory_special(size_t bytes, size_t page_size, char* req_addr, bool exec);
 
   static bool release_memory_special_impl(char* base, size_t bytes);
   static bool release_memory_special_shm(char* base, size_t bytes);
@@ -119,6 +118,7 @@ class Linux {
   static bool _stack_is_executable;
   static void *dlopen_helper(const char *name, char *ebuf, int ebuflen);
   static void *dll_load_in_vmthread(const char *name, char *ebuf, int ebuflen);
+  static const char *dll_path(void* lib);
 
   static void init_thread_fpu_state();
   static int  get_fpu_control_word();
@@ -130,9 +130,6 @@ class Linux {
 
   static address   initial_thread_stack_bottom(void)                { return _initial_thread_stack_bottom; }
   static uintptr_t initial_thread_stack_size(void)                  { return _initial_thread_stack_size; }
-
-  static int page_size(void)                                        { return _page_size; }
-  static void set_page_size(int val)                                { _page_size = val; }
 
   static intptr_t* ucontext_get_sp(const ucontext_t* uc);
   static intptr_t* ucontext_get_fp(const ucontext_t* uc);
@@ -155,6 +152,7 @@ class Linux {
 
   // Stack overflow handling
   static bool manually_expand_stack(JavaThread * t, address addr);
+  static void expand_stack_to(address bottom);
 
   // fast POSIX clocks support
   static void fast_thread_clock_init(void);
@@ -169,13 +167,33 @@ class Linux {
 
   static jlong fast_thread_cpu_time(clockid_t clockid);
 
+  // Determine if the vmid is the parent pid for a child in a PID namespace.
+  // Return the namespace pid if so, otherwise -1.
+  static int get_namespace_pid(int vmid);
+
+  // Output structure for query_process_memory_info()
+  struct meminfo_t {
+    ssize_t vmsize;     // current virtual size
+    ssize_t vmpeak;     // peak virtual size
+    ssize_t vmrss;      // current resident set size
+    ssize_t vmhwm;      // peak resident set size
+    ssize_t vmswap;     // swapped out
+    ssize_t rssanon;    // resident set size (anonymous mappings, needs 4.5)
+    ssize_t rssfile;    // resident set size (file mappings, needs 4.5)
+    ssize_t rssshmem;   // resident set size (shared mappings, needs 4.5)
+  };
+
+  // Attempts to query memory information about the current process and return it in the output structure.
+  // May fail (returns false) or succeed (returns true) but not all output fields are available; unavailable
+  // fields will contain -1.
+  static bool query_process_memory_info(meminfo_t* info);
+
   // Stack repair handling
 
   // none present
 
  private:
   static void numa_init();
-  static void expand_stack_to(address bottom);
 
   typedef int (*sched_getcpu_func_t)(void);
   typedef int (*numa_node_to_cpus_func_t)(int node, unsigned long *buffer, int bufferlen);
@@ -245,6 +263,40 @@ class Linux {
     Interleave
   };
   static NumaAllocationPolicy _current_numa_policy;
+
+#ifdef __GLIBC__
+  struct glibc_mallinfo {
+    int arena;
+    int ordblks;
+    int smblks;
+    int hblks;
+    int hblkhd;
+    int usmblks;
+    int fsmblks;
+    int uordblks;
+    int fordblks;
+    int keepcost;
+  };
+
+  struct glibc_mallinfo2 {
+    size_t arena;
+    size_t ordblks;
+    size_t smblks;
+    size_t hblks;
+    size_t hblkhd;
+    size_t usmblks;
+    size_t fsmblks;
+    size_t uordblks;
+    size_t fordblks;
+    size_t keepcost;
+  };
+
+  typedef struct glibc_mallinfo (*mallinfo_func_t)(void);
+  typedef struct glibc_mallinfo2 (*mallinfo2_func_t)(void);
+
+  static mallinfo_func_t _mallinfo;
+  static mallinfo2_func_t _mallinfo2;
+#endif
 
  public:
   static int sched_getcpu()  { return _sched_getcpu != NULL ? _sched_getcpu() : -1; }
@@ -346,19 +398,17 @@ class Linux {
   // Returns true if bound to a single numa node, otherwise returns false.
   static bool is_bound_to_single_node() {
     int nodes = 0;
-    struct bitmask* bmp = NULL;
     unsigned int node = 0;
     unsigned int highest_node_number = 0;
 
-    if (_numa_get_membind != NULL && _numa_max_node != NULL && _numa_bitmask_isbitset != NULL) {
-      bmp = _numa_get_membind();
+    if (_numa_membind_bitmask != NULL && _numa_max_node != NULL && _numa_bitmask_isbitset != NULL) {
       highest_node_number = _numa_max_node();
     } else {
       return false;
     }
 
     for (node = 0; node <= highest_node_number; node++) {
-      if (_numa_bitmask_isbitset(bmp, node)) {
+      if (_numa_bitmask_isbitset(_numa_membind_bitmask, node)) {
         nodes++;
       }
     }
@@ -373,6 +423,8 @@ class Linux {
   static const GrowableArray<int>* numa_nindex_to_node() {
     return _nindex_to_node;
   }
+
+  void* resolve_function_descriptor(void* p);
 };
 
 #endif // OS_LINUX_OS_LINUX_HPP

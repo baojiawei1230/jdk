@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,16 +42,6 @@
 #define ScaleForWordSize(x) (x)
 #endif
 
-// use this for flags that are true per default in the tiered build
-// but false in non-tiered builds, and vice versa
-#ifdef TIERED
-#define  trueInTiered true
-#define falseInTiered false
-#else
-#define  trueInTiered false
-#define falseInTiered true
-#endif
-
 // use this for flags that are true by default in the debug version but
 // false in the optimized version, and vice versa
 #ifdef ASSERT
@@ -74,7 +64,7 @@
 
 // Only materialize src code for range checking when required, ignore otherwise
 #define IGNORE_RANGE(a, b)
-// Only materialize src code for contraint checking when required, ignore otherwise
+// Only materialize src code for constraint checking when required, ignore otherwise
 #define IGNORE_CONSTRAINT(func,type)
 
 #define IGNORE_FLAG(...)

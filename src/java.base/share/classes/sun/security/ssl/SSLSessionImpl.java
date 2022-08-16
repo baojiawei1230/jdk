@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +24,7 @@
  */
 package sun.security.ssl;
 
-import sun.security.x509.X509CertImpl;
+import sun.security.provider.X509Factory;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -307,9 +307,6 @@ final class SSLSessionImpl extends ExtendedSSLSession {
      */
 
     SSLSessionImpl(HandshakeContext hc, ByteBuffer buf) throws IOException {
-        int i = 0;
-        byte[] b;
-
         boundValues = new ConcurrentHashMap<>();
         this.protocolVersion =
                 ProtocolVersion.valueOf(Short.toUnsignedInt(buf.getShort()));
@@ -323,7 +320,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
 
         // Local Supported signature algorithms
         ArrayList<SignatureScheme> list = new ArrayList<>();
-        i = Byte.toUnsignedInt(buf.get());
+        int i = Byte.toUnsignedInt(buf.get());
         while (i-- > 0) {
             list.add(SignatureScheme.valueOf(
                     Short.toUnsignedInt(buf.getShort())));
@@ -340,6 +337,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
         this.peerSupportedSignAlgs = Collections.unmodifiableCollection(list);
 
         // PSK
+        byte[] b;
         i = Short.toUnsignedInt(buf.getShort());
         if (i > 0) {
             b = new byte[i];
@@ -461,7 +459,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
                 b = new byte[buf.getInt()];
                 buf.get(b);
                 try {
-                    this.peerCerts[j] = new X509CertImpl(b);
+                    this.peerCerts[j] = X509Factory.cachedGetX509Cert(b);
                 } catch (Exception e) {
                     throw new IOException(e);
                 }
@@ -482,7 +480,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
                     b = new byte[buf.getInt()];
                     buf.get(b);
                     try {
-                        this.localCerts[i] = new X509CertImpl(b);
+                        this.localCerts[i] = X509Factory.cachedGetX509Cert(b);
                     } catch (Exception e) {
                         throw new IOException(e);
                     }
@@ -905,6 +903,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
      * are currently valid in this process.  For client sessions,
      * this returns null.
      */
+    @SuppressWarnings("removal")
     @Override
     public SSLSessionContext getSessionContext() {
         /*
@@ -1037,7 +1036,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
         // Certs are immutable objects, therefore we don't clone them.
         // But do need to clone the array, so that nothing is inserted
         // into peerCerts.
-        return (java.security.cert.Certificate[])peerCerts.clone();
+        return peerCerts.clone();
     }
 
     /**
@@ -1055,8 +1054,7 @@ final class SSLSessionImpl extends ExtendedSSLSession {
         // clone to preserve integrity of session ... caller can't
         // change record of peer identity even by accident, much
         // less do it intentionally.
-        return (localCerts == null ? null :
-            (java.security.cert.Certificate[])localCerts.clone());
+        return (localCerts == null ? null : localCerts.clone());
     }
 
     /**
@@ -1534,6 +1532,7 @@ class SecureKey {
     private final Object            securityCtx;
 
     static Object getCurrentSecurityContext() {
+        @SuppressWarnings("removal")
         SecurityManager sm = System.getSecurityManager();
         Object context = null;
 

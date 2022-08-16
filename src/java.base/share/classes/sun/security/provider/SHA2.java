@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@ package sun.security.provider;
 import java.util.Arrays;
 import java.util.Objects;
 
+import jdk.internal.util.Preconditions;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 import static sun.security.provider.ByteArrayAccess.*;
 
@@ -83,7 +84,6 @@ abstract class SHA2 extends DigestBase {
         super(name, digestLength, 64);
         this.initialHashes = initialHashes;
         state = new int[8];
-        W = new int[64];
         resetHashes();
     }
 
@@ -92,7 +92,9 @@ abstract class SHA2 extends DigestBase {
      */
     void implReset() {
         resetHashes();
-        Arrays.fill(W, 0);
+        if (W != null) {
+            Arrays.fill(W, 0);
+        }
     }
 
     private void resetHashes() {
@@ -124,11 +126,10 @@ abstract class SHA2 extends DigestBase {
     private void implCompressCheck(byte[] buf, int ofs) {
         Objects.requireNonNull(buf);
 
-        // The checks performed by the method 'b2iBig64'
-        // are sufficient for the case when the method
-        // 'implCompressImpl' is replaced with a compiler
-        // intrinsic.
-        b2iBig64(buf, ofs, W);
+        // Checks similar to those performed by the method 'b2iBig64'
+        // are sufficient for the case when the method 'implCompress0' is
+        // replaced with a compiler intrinsic.
+        Preconditions.checkFromIndexSize(ofs, 64, buf.length, Preconditions.AIOOBE_FORMATTER);
     }
 
     // The method 'implCompressImpl' seems not to use its parameters.
@@ -138,6 +139,10 @@ abstract class SHA2 extends DigestBase {
     // must be passed as parameter to the method.
     @IntrinsicCandidate
     private void implCompress0(byte[] buf, int ofs) {
+        if (W == null) {
+            W = new int[64];
+        }
+        b2iBig64(buf, ofs, W);
         // The first 16 ints are from the byte stream, compute the rest of
         // the W[]'s
         for (int t = 16; t < ITERATION; t++) {
@@ -151,14 +156,14 @@ abstract class SHA2 extends DigestBase {
 
             // delta0(x) = S(x, 7) ^ S(x, 18) ^ R(x, 3)
             int delta0_W_t15 =
-                    ((W_t15 >>>  7) | (W_t15 << 25)) ^
-                    ((W_t15 >>> 18) | (W_t15 << 14)) ^
+                    Integer.rotateRight(W_t15, 7) ^
+                    Integer.rotateRight(W_t15, 18) ^
                      (W_t15 >>>  3);
 
             // delta1(x) = S(x, 17) ^ S(x, 19) ^ R(x, 10)
             int delta1_W_t2 =
-                    ((W_t2 >>> 17) | (W_t2 << 15)) ^
-                    ((W_t2 >>> 19) | (W_t2 << 13)) ^
+                    Integer.rotateRight(W_t2, 17) ^
+                    Integer.rotateRight(W_t2, 19) ^
                      (W_t2 >>> 10);
 
             W[t] = delta0_W_t15 + delta1_W_t2 + W[t-7] + W[t-16];
@@ -179,15 +184,15 @@ abstract class SHA2 extends DigestBase {
 
             // sigma0(x) = S(x,2) xor S(x,13) xor S(x,22)
             int sigma0_a =
-                    ((a >>>  2) | (a << 30)) ^
-                    ((a >>> 13) | (a << 19)) ^
-                    ((a >>> 22) | (a << 10));
+                    Integer.rotateRight(a, 2) ^
+                    Integer.rotateRight(a, 13) ^
+                    Integer.rotateRight(a, 22);
 
             // sigma1(x) = S(x,6) xor S(x,11) xor S(x,25)
             int sigma1_e =
-                    ((e >>>  6) | (e << 26)) ^
-                    ((e >>> 11) | (e << 21)) ^
-                    ((e >>> 25) | (e <<  7));
+                    Integer.rotateRight(e, 6) ^
+                    Integer.rotateRight(e, 11) ^
+                    Integer.rotateRight(e, 25);
 
             // ch(x,y,z) = (x and y) xor ((complement x) and z)
             int ch_efg = (e & f) ^ ((~e) & g);
@@ -220,7 +225,7 @@ abstract class SHA2 extends DigestBase {
     public Object clone() throws CloneNotSupportedException {
         SHA2 copy = (SHA2) super.clone();
         copy.state = copy.state.clone();
-        copy.W = new int[64];
+        copy.W = null;
         return copy;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,6 +23,8 @@
  */
 
 #include "precompiled.hpp"
+#include "cds/metaspaceShared.hpp"
+#include "classfile/vmClasses.hpp"
 #include "interpreter/bytecodes.hpp"
 #include "interpreter/interpreter.hpp"
 #include "interpreter/rewriter.hpp"
@@ -31,6 +33,7 @@
 #include "oops/constantPool.hpp"
 #include "oops/generateOopMap.hpp"
 #include "prims/methodHandles.hpp"
+#include "runtime/arguments.hpp"
 #include "runtime/fieldDescriptor.inline.hpp"
 #include "runtime/handles.inline.hpp"
 
@@ -114,10 +117,16 @@ void Rewriter::make_constant_pool_cache(TRAPS) {
     MetadataFactory::free_metadata(loader_data, cache);
     _pool->set_cache(NULL);  // so the verifier isn't confused
   } else {
-    DEBUG_ONLY(
-    if (DumpSharedSpaces) {
-      cache->verify_just_initialized();
-    })
+    if (Arguments::is_dumping_archive()) {
+      if (_pool->pool_holder()->is_shared()) {
+        assert(DynamicDumpSharedSpaces, "must be");
+        // We are linking a shared class from the base archive. This
+        // class won't be written into the dynamic archive, so there's no
+        // need to save its CpCaches.
+      } else {
+        cache->save_for_archive();
+      }
+    }
   }
 }
 
@@ -219,13 +228,13 @@ void Rewriter::maybe_rewrite_invokehandle(address opc, int cp_index, int cache_i
       assert(status >= -1 && status <= 1, "oob tri-state");
       if (status == 0) {
         if (_pool->klass_ref_at_noresolve(cp_index) == vmSymbols::java_lang_invoke_MethodHandle() &&
-            MethodHandles::is_signature_polymorphic_name(SystemDictionary::MethodHandle_klass(),
+            MethodHandles::is_signature_polymorphic_name(vmClasses::MethodHandle_klass(),
                                                          _pool->name_ref_at(cp_index))) {
           // we may need a resolved_refs entry for the appendix
           add_invokedynamic_resolved_references_entry(cp_index, cache_index);
           status = +1;
         } else if (_pool->klass_ref_at_noresolve(cp_index) == vmSymbols::java_lang_invoke_VarHandle() &&
-                   MethodHandles::is_signature_polymorphic_name(SystemDictionary::VarHandle_klass(),
+                   MethodHandles::is_signature_polymorphic_name(vmClasses::VarHandle_klass(),
                                                                 _pool->name_ref_at(cp_index))) {
           // we may need a resolved_refs entry for the appendix
           add_invokedynamic_resolved_references_entry(cp_index, cache_index);
@@ -566,9 +575,11 @@ void Rewriter::rewrite_bytecodes(TRAPS) {
 }
 
 void Rewriter::rewrite(InstanceKlass* klass, TRAPS) {
-  if (!DumpSharedSpaces) {
-    assert(!klass->is_shared(), "archive methods must not be rewritten at run time");
+#if INCLUDE_CDS
+  if (klass->is_shared()) {
+    assert(!klass->is_rewritten(), "rewritten shared classes cannot be rewritten again");
   }
+#endif // INCLUDE_CDS
   ResourceMark rm(THREAD);
   constantPoolHandle cpool(THREAD, klass->constants());
   Rewriter     rw(klass, cpool, klass->methods(), CHECK);

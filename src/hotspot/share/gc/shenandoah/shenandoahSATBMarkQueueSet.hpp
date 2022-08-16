@@ -27,13 +27,10 @@
 
 #include "gc/shared/satbMarkQueue.hpp"
 #include "gc/shenandoah/shenandoahHeap.hpp"
+#include "runtime/javaThread.hpp"
 #include "runtime/mutex.hpp"
-#include "runtime/thread.hpp"
 
 class ShenandoahSATBMarkQueueSet : public SATBMarkQueueSet {
-protected:
-  virtual bool should_enqueue_buffer(SATBMarkQueue& queue);
-
 public:
   ShenandoahSATBMarkQueueSet(BufferNode::Allocator* allocator);
 

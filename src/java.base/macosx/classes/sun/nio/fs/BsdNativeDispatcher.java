@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,8 +25,7 @@
 
 package sun.nio.fs;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import jdk.internal.misc.Blocker;
 
 /**
  * Bsd specific system calls.
@@ -64,6 +63,29 @@ class BsdNativeDispatcher extends UnixNativeDispatcher {
         }
     }
     static native byte[] getmntonname0(long pathAddress) throws UnixException;
+
+    /**
+     * setattrlist(const char* path, struct attrlist* attrList, void* attrBuf,
+     *             size_t attrBufSize, unsigned long options)
+     */
+    static void setattrlist(UnixPath path, int commonattr, long modTime,
+                            long accTime, long createTime, long options)
+        throws UnixException
+    {
+        try (NativeBuffer buffer = copyToNativeBuffer(path)) {
+            long comp = Blocker.begin();
+            try {
+                setattrlist0(buffer.address(), commonattr, modTime, accTime,
+                             createTime, options);
+            } finally {
+                Blocker.end(comp);
+            }
+        }
+    }
+    private static native void setattrlist0(long pathAddress, int commonattr,
+                                            long modTime, long accTime,
+                                            long createTime, long options)
+        throws UnixException;
 
     // initialize field IDs
     private static native void initIDs();

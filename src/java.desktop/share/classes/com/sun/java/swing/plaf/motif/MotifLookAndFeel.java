@@ -678,7 +678,7 @@ public class MotifLookAndFeel extends BasicLookAndFeel
             "PopupMenu.border", popupMenuBorder,
             "PopupMenu.foreground", table.get("menuText"),
             "PopupMenu.font", dialogPlain12,
-            "PopupMenu.consumeEventOnClose", Boolean.TRUE,
+            "PopupMenu.consumeEventOnClose", Boolean.FALSE,
 
             "Label.font", dialogPlain12,
             "Label.background", table.get("control"),
@@ -1229,8 +1229,6 @@ public class MotifLookAndFeel extends BasicLookAndFeel
             // selected.
             "PopupMenu.selectedWindowInputMapBindings", new Object[] {
                   "ESCAPE", "cancel",
-                     "TAB", "cancel",
-               "shift TAB", "cancel",
                     "DOWN", "selectNext",
                  "KP_DOWN", "selectNext",
                       "UP", "selectPrevious",
